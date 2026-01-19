@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { useLanguage } from '../LanguageProvider';
 
 const TABLES = [
@@ -35,126 +36,205 @@ export default function ImportPage() {
     setFiles((prev) => ({ ...prev, [table]: file }));
   };
 
+  const parseFile = async (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      const isCsv = file.name.endsWith('.csv');
+
+      if (isCsv) {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => {
+            if (results.errors && results.errors.length > 0 && !(results.errors.length === 1 && results.errors[0].code === 'UndetectableDelimiter')) {
+              reject(results.errors);
+            } else {
+              resolve(results.data);
+            }
+          },
+          error: (error) => reject(error)
+        });
+      } else {
+        // Assume Excel
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = e.target?.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            resolve(jsonData);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = (err) => reject(err);
+        reader.readAsBinaryString(file);
+      }
+    });
+  };
+
   const handleImport = async () => {
     setLoading(true);
     let importResults: ResultsState = {};
+
     for (const { name } of TABLES) {
       const file = files[name];
       if (!file) continue;
-      const text = await file.text();
-      const { data, errors } = Papa.parse(text, { 
-        header: true, 
-        skipEmptyLines: true,
-        delimiter: "," 
-      });
-      if (errors && errors.length > 0 && !(errors.length === 1 && errors[0].code === 'UndetectableDelimiter')) {
-        importResults[name] = { success: false, error: errors };
-        continue;
-      }
-      // Send to API
+
       try {
+        const data = await parseFile(file);
+
+        // Send to API
         const res = await fetch(`/api/${name}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(Array.isArray(data) ? data : [data]),
         });
+
         if (!res.ok) throw new Error(await res.text());
-        importResults[name] = { success: true, count: (data as any[]).length };
+        importResults[name] = { success: true, count: data.length };
       } catch (e: any) {
-        importResults[name] = { success: false, error: e.message };
+        let errorMessage = e.message;
+        if (Array.isArray(e)) {
+          errorMessage = e.map(err => err.message || JSON.stringify(err)).join(', ');
+        }
+        importResults[name] = { success: false, error: errorMessage };
       }
     }
     setResults(importResults);
     setLoading(false);
   };
 
+  const downloadSample = (filename: string, headers: string) => {
+    const csvContent = "data:text/csv;charset=utf-8," + headers + "\n";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${filename}_template.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div style={{ maxWidth: 600, margin: "40px auto", padding: 24, background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px #0001", color: "#222" }}>
+    <div style={{ maxWidth: 800, margin: "40px auto", padding: 24, background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px #0001", color: "#222" }}>
       <h1>{language === 'gu' ? 'જથ્થાબંધ ડેટા આયાત કરો' : 'Bulk Import Data'}</h1>
-      <p>{language === 'gu' ? 'દરેક ટેબલ માટે CSV ફાઇલો અપલોડ કરો. કૉલમ્સ તમારા સુપાબેસ સ્કીમા સાથે મેળ ખાતી હોવી જોઈએ.' : 'Upload CSV files for each table. Columns should match your Supabase schema.'}</p>
-      
-      <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', margin: '16px 0' }}>
-        <h4>{language === 'gu' ? 'વિક્રેતાઓ CSV માટે સૂચનાઓ' : 'Instructions for Vendors CSV'}</h4>
-        <p>{language === 'gu' ? 'તમારી vendors.csv ફાઇલમાં નીચેની કૉલમ્સ હોવી આવશ્યક છે:' : 'Your vendors.csv file must have the following columns:'}</p>
-        <ul>
-          <li><strong>name</strong>: {language === 'gu' ? 'વિક્રેતાનું નામ.' : 'The name of the vendor.'}</li>
-          <li><strong>route_name</strong>: {language === 'gu' ? 'રૂટનું ચોક્કસ નામ જે વિક્રેતા સાથે જોડાયેલ છે. તે તમારા ડેટાબેઝમાં હાલના રૂટ સાથે મેળ ખાવું આવશ્યક છે.' : 'The exact name of the route the vendor belongs to. This must match an existing route in your database.'}</li>
-          <li><strong>contact</strong> (optional): {language === 'gu' ? 'વિક્રેતાનો સંપર્ક નંબર.' : "The vendor's contact number."}</li>
-          <li><strong>address</strong> (optional): {language === 'gu' ? 'વિક્રેતાનું સરનામું.' : "The vendor's address."}</li>
-        </ul>
-        <p>{language === 'gu' ? 'ઉદાહરણ:' : 'Example:'}</p>
-        <pre style={{ background: '#eee', padding: '8px', borderRadius: '4px' }}>
-{`name,route_name,contact,address
-"Shop A","Main Street Route","1234567890","123 Main St"
-"Store B","Downtown Route",,"456 Center Ave"`}
-        </pre>
-      </div>
+      <p>{language === 'gu' ? 'દરેક ટેબલ માટે CSV અથવા Excel (.xlsx, .xls) ફાઇલો અપલોડ કરો.' : 'Upload CSV or Excel (.xlsx, .xls) files for each table.'}</p>
 
-      <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', margin: '16px 0' }}>
-        <h4>{language === 'gu' ? 'રૂટ્સ CSV માટે સૂચનાઓ' : 'Instructions for Routes CSV'}</h4>
-        <p>{language === 'gu' ? 'તમારી routes.csv ફાઇલમાં નીચેની કૉલમ હોવી આવશ્યક છે:' : 'Your routes.csv file must have the following column:'}</p>
-        <ul>
-          <li><strong>name</strong>: {language === 'gu' ? 'રૂટનું અનન્ય નામ.' : 'The unique name of the route.'}</li>
-        </ul>
-        <p>{language === 'gu' ? 'ઉદાહરણ:' : 'Example:'}</p>
-        <pre style={{ background: '#eee', padding: '8px', borderRadius: '4px' }}>
-{`name
-"Main Street Route"
-"Downtown Route"`}
-        </pre>
-      </div>
+      {/* Instructions Section */}
+      <div style={{ background: '#f5f5f5', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
+        <h3 style={{ marginTop: 0 }}>{language === 'gu' ? 'ફોર્મેટ સૂચનાઓ' : 'Format Instructions'}</h3>
+        <p style={{ marginBottom: '10px' }}>
+          {language === 'gu'
+            ? 'તમે .csv, .xlsx, અથવા .xls ફાઇલો અપલોડ કરી શકો છો. નમૂના ફાઇલો ડાઉનલોડ કરવા માટે નીચેની લિંક્સનો ઉપયોગ કરો:'
+            : 'You can upload .csv, .xlsx, or .xls files. Use the links below to download sample templates:'}
+        </p>
 
-      <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', margin: '16px 0' }}>
-        <h4>{language === 'gu' ? 'વસ્તુઓ CSV માટે સૂચનાઓ' : 'Instructions for Items CSV'}</h4>
-        <p>{language === 'gu' ? 'તમારી items.csv ફાઇલમાં નીચેની કૉલમ્સ હોવી આવશ્યક છે:' : 'Your items.csv file must have the following columns:'}</p>
-        <ul>
-          <li><strong>name_en</strong>: {language === 'gu' ? 'વસ્તુનું નામ અંગ્રેજીમાં.' : 'The name of the item in English.'}</li>
-          <li><strong>name_gu</strong>: {language === 'gu' ? 'વસ્તુનું નામ ગુજરાતીમાં.' : 'The name of the item in Gujarati.'}</li>
-          <li><strong>rate</strong>: {language === 'gu' ? 'વસ્તુનો ભાવ.' : 'The price of the item.'}</li>
-          <li><strong>has_gst</strong>: {language === 'gu' ? 'GST છે કે નહીં (true/false).' : 'Whether the item has GST (true/false).'}</li>
-          <li><strong>gst_percentage</strong> (optional): {language === 'gu' ? 'જો has_gst true હોય તો GST ટકાવારી.' : 'The GST percentage if has_gst is true.'}</li>
-        </ul>
-      </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
 
-      <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', margin: '16px 0' }}>
-        <h4>{language === 'gu' ? 'બિલ્સ CSV માટે સૂચનાઓ' : 'Instructions for Bills CSV'}</h4>
-        <p>{language === 'gu' ? 'તમારી bills.csv ફાઇલમાં નીચેની કૉલમ્સ હોવી આવશ્યક છે:' : 'Your bills.csv file must have the following columns:'}</p>
-        <ul>
-            <li><strong>vendor_name</strong>: {language === 'gu' ? 'વિક્રેતાનું ચોક્કસ નામ. તે ડેટાબેઝમાં હાલના વિક્રેતા સાથે મેળ ખાવું આવશ્યક છે.' : 'The exact name of the vendor. This must match an existing vendor in the database.'}</li>
-            <li><strong>date</strong>: {language === 'gu' ? 'બિલની તારીખ (YYYY-MM-DD).' : 'The date of the bill (YYYY-MM-DD).'}</li>
-        </ul>
-      </div>
+          <div style={{ background: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Routes</strong>
+              <button
+                onClick={() => downloadSample('routes', 'name')}
+                style={{ fontSize: '0.8em', padding: '2px 8px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+              >
+                Download Sample
+              </button>
+            </div>
+            <code style={{ display: 'block', marginTop: '5px', background: '#eee', padding: '5px' }}>name</code>
+          </div>
 
-      <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', margin: '16px 0' }}>
-        <h4>{language === 'gu' ? 'બિલ વસ્તુઓ CSV માટે સૂચનાઓ' : 'Instructions for Bill Items CSV'}</h4>
-        <p>{language === 'gu' ? 'તમારી bill_items.csv ફાઇલમાં નીચેની કૉલમ્સ હોવી આવશ્યક છે:' : 'Your bill_items.csv file must have the following columns:'}</p>
-        <ul>
-            <li><strong>bill_id</strong>: {language === 'gu' ? 'બિલનું ID જેની આ વસ્તુ છે. આ ID બિલ્સ ટેબલમાંથી આવે છે.' : 'The ID of the bill this item belongs to. This comes from the bills table.'}</li>
-            <li><strong>item_name_en</strong>: {language === 'gu' ? 'વસ્તુનું ચોક્કસ અંગ્રેજી નામ. તે ડેટાબેઝમાં હાલની વસ્તુ સાથે મેળ ખાવું આવશ્યક છે.' : 'The exact English name of the item. This must match an existing item in the database.'}</li>
-            <li><strong>quantity</strong>: {language === 'gu' ? 'ખરીદેલી વસ્તુનો જથ્થો.' : 'The quantity of the item purchased.'}</li>
-        </ul>
+          <div style={{ background: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Vendors</strong>
+              <button
+                onClick={() => downloadSample('vendors', 'name,route_name,contact,address')}
+                style={{ fontSize: '0.8em', padding: '2px 8px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+              >
+                Download Sample
+              </button>
+            </div>
+            <code style={{ display: 'block', marginTop: '5px', background: '#eee', padding: '5px' }}>name, route_name, contact, address</code>
+          </div>
+
+          <div style={{ background: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Items</strong>
+              <button
+                onClick={() => downloadSample('items', 'name_en,name_gu,rate,has_gst,gst_percentage,category')}
+                style={{ fontSize: '0.8em', padding: '2px 8px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+              >
+                Download Sample
+              </button>
+            </div>
+            <div style={{ fontSize: '0.9em', color: '#666', marginBottom: '4px' }}>Now supports categories!</div>
+            <code style={{ display: 'block', marginTop: '5px', background: '#eee', padding: '5px' }}>name_en, name_gu, rate, has_gst, gst_percentage, category</code>
+            <div style={{ fontSize: '0.85em', marginTop: '4px' }}>
+              *category options: <em>Fryums, Namkeen, Others</em>
+            </div>
+          </div>
+
+          <div style={{ background: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Bills (Legacy)</strong>
+              <button
+                onClick={() => downloadSample('bills', 'vendor_name,date')}
+                style={{ fontSize: '0.8em', padding: '2px 8px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+              >
+                Download Sample
+              </button>
+            </div>
+            <code style={{ display: 'block', marginTop: '5px', background: '#eee', padding: '5px' }}>vendor_name, date</code>
+            <span style={{ fontSize: '0.8em' }}>(Date format: YYYY-MM-DD)</span>
+          </div>
+
+          <div style={{ background: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Bill Items (Legacy)</strong>
+              <button
+                onClick={() => downloadSample('bill_items', 'bill_id,item_name_en,quantity')}
+                style={{ fontSize: '0.8em', padding: '2px 8px', cursor: 'pointer', background: '#e2e8f0', border: '1px solid #cbd5e1', borderRadius: '4px' }}
+              >
+                Download Sample
+              </button>
+            </div>
+            <code style={{ display: 'block', marginTop: '5px', background: '#eee', padding: '5px' }}>bill_id, item_name_en, quantity</code>
+          </div>
+        </div>
       </div>
 
       {TABLES.map(({ name, label }) => (
-        <div key={name} style={{ marginBottom: 16 }}>
-          <label>
-            <b>{label} CSV:</b>
-            <input type="file" accept=".csv" onChange={e => {
+        <div key={name} style={{ marginBottom: 16, borderBottom: '1px solid #eee', paddingBottom: '16px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>
+            {label} ({language === 'gu' ? 'ફાઈલ' : 'File'}):
+          </label>
+          <input
+            type="file"
+            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+            onChange={e => {
               const file = e.target.files && e.target.files[0] ? e.target.files[0] as File : undefined;
               handleFileChange(name, file);
-            }} />
-          </label>
+            }}
+            style={{ display: 'block', width: '100%' }}
+          />
         </div>
       ))}
-      <button onClick={handleImport} disabled={loading} style={{ marginTop: 16, padding: "8px 24px" }}>
-        {loading ? (language === 'gu' ? 'આયાત થઈ રહ્યું છે...' : 'Importing...') : (language === 'gu' ? 'બધું આયાત કરો' : 'Import All')}
+
+      <button onClick={handleImport} disabled={loading} style={{ marginTop: 16, padding: "10px 30px", fontSize: '1.1em', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+        {loading ? (language === 'gu' ? 'આયાત થઈ રહ્યું છે...' : 'Importing...') : (language === 'gu' ? 'બધું આયાત કરો' : 'Start Import')}
       </button>
+
       <div style={{ marginTop: 32 }}>
         {Object.keys(results).length > 0 && <h3>{language === 'gu' ? 'પરિણામો:' : 'Results:'}</h3>}
-        <ul>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
           {Object.entries(results).map(([table, res]) => (
-            <li key={table} style={{ color: res.success ? "green" : "red" }}>
-              {table}: {res.success ? `${language === 'gu' ? 'આયાત થયેલ' : 'Imported'} ${res.count} ${language === 'gu' ? 'પંક્તિઓ' : 'rows'}` : `${language === 'gu' ? 'ભૂલ:' : 'Error:'} ${Array.isArray(res.error) ? res.error.map(e => e.message).join(', ') : JSON.stringify(res.error)}`}
+            <li key={table} style={{ padding: '8px', marginBottom: '4px', borderRadius: '4px', background: res.success ? '#e6fffa' : '#fff5f5', border: `1px solid ${res.success ? '#b2f5ea' : '#feb2b2'}` }}>
+              <strong>{table.toUpperCase()}:</strong> {res.success ?
+                <span style={{ color: 'green' }}>✅ {language === 'gu' ? 'સફળતાપૂર્વક આયાત' : 'Successfully imported'} {res.count} {language === 'gu' ? 'રેકોર્ડ્સ' : 'records'}.</span>
+                :
+                <span style={{ color: 'red' }}>❌ {language === 'gu' ? 'ભૂલ:' : 'Error:'} {res.error}</span>}
             </li>
           ))}
         </ul>

@@ -8,18 +8,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // This is a server-side client creator.
 export function createSupabaseServerClient() {
-    console.log('Attempting to create a server-side Supabase client.');
-    console.log('NEXT_PUBLIC_SUPABASE_URL is set:', !!process.env.NEXT_PUBLIC_SUPABASE_URL);
-    // Use the secure, server-only service role key
-    console.log('SUPABASE_SERVICE_ROLE_KEY is set:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Fallback to Anon Key if Service Role Key is not provided. 
+    // Note: Using Anon Key means RLS policies will apply. Service Role Key bypasses RLS.
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
+    if (!supabaseUrl || !supabaseKey) {
         console.error('Missing Supabase environment variables for server-side client.');
-        throw new Error('Supabase URL and Service Role Key must be defined in environment variables for server-side operations.');
+        throw new Error('Supabase URL and Key (Service Role or Anon) must be defined.');
     }
 
-    return createClient(supabaseUrl, supabaseServiceRoleKey);
+    return createClient(supabaseUrl, supabaseKey);
 } 

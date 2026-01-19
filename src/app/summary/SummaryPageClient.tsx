@@ -1,8 +1,9 @@
 "use client";
 import { useState, useMemo } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+// Dynamic imports will be used for jsPDF and autoTable
 import { useLanguage } from '../LanguageProvider';
+import type { jsPDF } from "jspdf";
+import type { UserOptions } from "jspdf-autotable";
 
 // Interfaces
 interface BillItem {
@@ -53,6 +54,27 @@ function formatDate(dateNum: string | number | Date) {
     return d.toLocaleDateString('en-GB'); // dd/mm/yyyy
 }
 
+async function loadGujaratiFont(doc: jsPDF) {
+    try {
+        const response = await fetch('/fonts/NotoSansGujarati-Regular.ttf');
+        if (!response.ok) throw new Error("Failed to load font");
+        const blob = await response.blob();
+        const reader = new FileReader();
+        return new Promise<void>((resolve) => {
+            reader.onloadend = () => {
+                const base64data = (reader.result as string).split(',')[1];
+                doc.addFileToVFS('NotoSansGujarati-Regular.ttf', base64data);
+                doc.addFont('NotoSansGujarati-Regular.ttf', 'NotoSansGujarati', 'normal');
+                doc.setFont('NotoSansGujarati');
+                resolve();
+            };
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.error("Error loading font:", e);
+    }
+}
+
 export function SummaryPageClient({ initialBills, initialItems, initialVendors }: { initialBills: Bill[], initialItems: Item[], initialVendors: Vendor[] }) {
     const [bills, setBills] = useState<Bill[]>(initialBills);
     const [loading, setLoading] = useState(false);
@@ -62,11 +84,11 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
     const vendorMap = useMemo(() => Object.fromEntries(initialVendors.map(vendor => [vendor.id, vendor])), [initialVendors]);
 
     const fetchBills = async () => {
-      setLoading(true);
-      const res = await fetch("/api/bills");
-      const data = await res.json();
-      setBills(Array.isArray(data) ? data : []);
-      setLoading(false);
+        setLoading(true);
+        const res = await fetch("/api/bills");
+        const data = await res.json();
+        setBills(Array.isArray(data) ? data : []);
+        setLoading(false);
     };
 
     async function handleDeleteBill(billId: string) {
@@ -93,7 +115,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         });
         if (response.ok) {
             // Refetch all bills to get the updated state
-            fetchBills(); 
+            fetchBills();
         } else {
             const err = await response.json();
             alert(`Failed to delete bill item: ${err.error}`);
@@ -114,8 +136,15 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         setLoading(false);
     }
 
-    function downloadBillPDF(bill: Bill, lang: 'en' | 'gu') {
+    async function downloadBillPDF(bill: Bill, lang: 'en' | 'gu') {
+        const jsPDF = (await import("jspdf")).default;
+        const autoTable = (await import("jspdf-autotable")).default;
         const doc = new jsPDF();
+
+        if (lang === 'gu') {
+            await loadGujaratiFont(doc);
+        }
+
         const vendor = vendorMap[bill.vendor_id];
         const billItems = bill.items || [];
         const business = lang === 'gu' ? businessDetailsGu : businessDetails;
@@ -127,7 +156,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         doc.text(business.address2, 105, 27, { align: 'center' });
         doc.text(business.gstin, 105, 32, { align: 'center' });
         doc.text(business.contact, 105, 37, { align: 'center' });
-        
+
         doc.line(10, 45, 200, 45);
 
         doc.setFontSize(12);
@@ -135,7 +164,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         doc.text(`${lang === 'gu' ? 'સરનામું' : 'Address'}: ${vendor?.address || ''}`, 10, 62);
         doc.text(`${lang === 'gu' ? 'સંપર્ક' : 'Contact'}: ${vendor?.contact || ''}`, 10, 69);
         doc.text(`${lang === 'gu' ? 'બિલની તારીખ' : 'Bill Date'}: ${formatDate(bill.date)}`, 150, 55);
-        
+
         const tableData = billItems.map((item: BillItem) => {
             const itemDetails = itemMap[item.item_id];
             return [
@@ -154,16 +183,30 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
             foot: [
                 [{ content: lang === 'gu' ? 'કુલ' : 'Total', colSpan: 2, styles: { halign: 'right' } }, total.toFixed(2)]
             ],
-            theme: 'striped'
+            theme: 'striped',
+            styles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            headStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            footStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            }
         });
 
         doc.save(`bill_${vendor?.name}_${formatDate(bill.date)}_${lang}.pdf`);
     }
 
-    function drawBillOnPage(doc: jsPDF, bill: Bill, lang: 'en' | 'gu') {
+    function drawBillOnPage(doc: jsPDF, bill: Bill, lang: 'en' | 'gu', autoTable: any) {
         const vendor = vendorMap[bill.vendor_id];
         const billItems = bill.items || [];
         const business = lang === 'gu' ? businessDetailsGu : businessDetails;
+
+        doc.setFont(lang === 'gu' ? 'NotoSansGujarati' : 'helvetica');
 
         doc.setFontSize(16);
         doc.text(business.name, 105, 15, { align: 'center' });
@@ -172,7 +215,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         doc.text(business.address2, 105, 27, { align: 'center' });
         doc.text(business.gstin, 105, 32, { align: 'center' });
         doc.text(business.contact, 105, 37, { align: 'center' });
-        
+
         doc.line(10, 45, 200, 45);
 
         doc.setFontSize(12);
@@ -180,7 +223,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         doc.text(`${lang === 'gu' ? 'સરનામું' : 'Address'}: ${vendor?.address || ''}`, 10, 62);
         doc.text(`${lang === 'gu' ? 'સંપર્ક' : 'Contact'}: ${vendor?.contact || ''}`, 10, 69);
         doc.text(`${lang === 'gu' ? 'બિલની તારીખ' : 'Bill Date'}: ${formatDate(bill.date)}`, 150, 55);
-        
+
         const head = [[
             lang === 'gu' ? 'વસ્તુ' : 'Item',
             lang === 'gu' ? 'જથ્થો' : 'Quantity',
@@ -236,29 +279,50 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
                     ''
                 ]
             ],
-            theme: 'striped'
+            theme: 'striped',
+            styles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            headStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            footStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            }
         });
     }
 
     const allBillItems = useMemo(() => bills.flatMap(b => b.items || []), [bills]);
     const total = useMemo(() => allBillItems.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0), [allBillItems]);
-    
+
     const itemWiseSummary = useMemo(() => {
-        let summary: Record<string, { qty: number; price: number, name: string }> = {};
+        let summary: Record<string, { qty: number; price: number, item_id: string }> = {};
         allBillItems.forEach((item: BillItem) => {
             const itemDetails = itemMap[item.item_id];
             if (!itemDetails) return;
-            const name = language === 'gu' ? itemDetails.name_gu : itemDetails.name_en;
-            if (!summary[name]) summary[name] = { qty: 0, price: 0, name };
-            summary[name].qty += item.quantity;
-            summary[name].price += (item.price || 0) * item.quantity;
+            // Use item_id as key to be language independent
+            if (!summary[item.item_id]) summary[item.item_id] = { qty: 0, price: 0, item_id: item.item_id };
+            summary[item.item_id].qty += item.quantity;
+            summary[item.item_id].price += (item.price || 0) * item.quantity;
         });
         return Object.values(summary);
-    }, [allBillItems, itemMap, language]);
+    }, [allBillItems, itemMap]);
 
-    function downloadSummaryPDF(lang: 'en' | 'gu') {
+    async function downloadSummaryPDF(lang: 'en' | 'gu') {
+        const jsPDF = (await import("jspdf")).default;
+        const autoTable = (await import("jspdf-autotable")).default;
         const doc = new jsPDF();
+
+        if (lang === 'gu') {
+            await loadGujaratiFont(doc);
+        }
+
         const business = lang === 'gu' ? businessDetailsGu : businessDetails;
+
+        doc.setFont(lang === 'gu' ? 'NotoSansGujarati' : 'helvetica');
 
         // --- Summary Page ---
         doc.setFontSize(16);
@@ -285,14 +349,16 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         ]];
         // Table body
         const tableData = itemWiseSummary.map((item) => {
-            const itemDetails = initialItems.find(i => (lang === 'gu' ? i.name_gu : i.name_en) === item.name);
+            const itemDetails = itemMap[item.item_id];
+            // Lookup name based on PDF language, not UI language
+            const name = lang === 'gu' ? itemDetails?.name_gu : itemDetails?.name_en;
             const rate = itemDetails?.rate || 0;
             const gstRate = itemDetails?.gst_percentage || 0;
             const withoutGst = rate * item.qty;
             const gstAmount = withoutGst * (gstRate / 100);
             const withGst = withoutGst + gstAmount;
             return [
-                item.name,
+                name || 'N/A',
                 item.qty,
                 rate.toFixed(2),
                 gstRate + '%',
@@ -303,29 +369,23 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         });
         // Table foot (totals)
         const totalGst = itemWiseSummary.reduce((sum, item) => {
-            const itemDetails = initialItems.find(i => (lang === 'gu' ? i.name_gu : i.name_en) === item.name);
+            const itemDetails = itemMap[item.item_id];
             const rate = itemDetails?.rate || 0;
             const gstRate = itemDetails?.gst_percentage || 0;
             return sum + (rate * item.qty) * (gstRate / 100);
         }, 0);
         const totalWithoutGst = itemWiseSummary.reduce((sum, item) => {
-            const itemDetails = initialItems.find(i => (lang === 'gu' ? i.name_gu : i.name_en) === item.name);
+            const itemDetails = itemMap[item.item_id];
             const rate = itemDetails?.rate || 0;
             return sum + (rate * item.qty);
         }, 0);
         const totalWithGst = itemWiseSummary.reduce((sum, item) => {
-            const itemDetails = initialItems.find(i => (lang === 'gu' ? i.name_gu : i.name_en) === item.name);
+            const itemDetails = itemMap[item.item_id];
             const rate = itemDetails?.rate || 0;
             const gstRate = itemDetails?.gst_percentage || 0;
             return sum + (rate * item.qty) * (1 + gstRate / 100);
         }, 0);
-        const foot = [[
-            { content: lang === 'gu' ? 'કુલ' : 'Total', colSpan: 4, styles: { halign: 'right' } },
-            totalGst.toFixed(2),
-            totalWithoutGst.toFixed(2),
-            totalWithGst.toFixed(2),
-            ''
-        ]];
+
         autoTable(doc, {
             startY: 62,
             head,
@@ -339,13 +399,25 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
                     ''
                 ]
             ],
-            theme: 'striped'
+            theme: 'striped',
+            styles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            headStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            },
+            footStyles: {
+                font: lang === 'gu' ? 'NotoSansGujarati' : 'helvetica',
+                fontStyle: 'normal'
+            }
         });
 
         // --- Individual Bills ---
         bills.forEach(bill => {
             doc.addPage();
-            drawBillOnPage(doc, bill, lang);
+            drawBillOnPage(doc, bill, lang, autoTable);
         });
 
         doc.save(`summary_${lang}.pdf`);
@@ -355,10 +427,13 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         <div style={{ maxWidth: 1200, margin: '2rem auto', padding: 16 }}>
             <h1 style={{ textAlign: 'center', marginBottom: '2rem' }}>{language === 'gu' ? 'બિલ સારાંશ' : 'Bill Summary'}</h1>
             {loading && <p>{language === 'gu' ? 'લોડ કરી રહ્યું છે...' : 'Loading...'}</p>}
-            
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem', gap: '1rem' }}>
-                <button onClick={() => { if (language === 'en' || language === 'gu') { downloadSummaryPDF(language) }}} disabled={bills.length === 0} style={{ backgroundColor: 'darkgreen' }}>
-                    {language === 'gu' ? 'સારાંશ PDF ડાઉનલોડ કરો' : 'Download Summary PDF'}
+                <button onClick={() => downloadSummaryPDF('en')} disabled={bills.length === 0} style={{ backgroundColor: 'darkgreen' }}>
+                    Download Summary (EN)
+                </button>
+                <button onClick={() => downloadSummaryPDF('gu')} disabled={bills.length === 0} style={{ backgroundColor: 'darkgreen' }}>
+                    Download Summary (GU)
                 </button>
                 <button onClick={handleDeleteAllBills} disabled={loading || bills.length === 0} style={{ backgroundColor: 'darkred' }}>
                     {language === 'gu' ? 'બધા બિલ કાઢી નાખો' : 'Delete All Bills'}
@@ -391,13 +466,17 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
                             </tr>
                         </thead>
                         <tbody>
-                            {itemWiseSummary.map((item, index) => (
-                                <tr key={index}>
-                                    <td style={{ border: '1px solid #ddd', padding: 8 }}>{item.name}</td>
-                                    <td style={{ border: '1px solid #ddd', padding: 8 }}>{item.qty}</td>
-                                    <td style={{ border: '1px solid #ddd', padding: 8 }}>{item.price.toFixed(2)}</td>
-                                </tr>
-                            ))}
+                            {itemWiseSummary.map((item, index) => {
+                                const itemDetails = itemMap[item.item_id];
+                                const name = language === 'gu' ? itemDetails?.name_gu : itemDetails?.name_en;
+                                return (
+                                    <tr key={index}>
+                                        <td style={{ border: '1px solid #ddd', padding: 8 }}>{name}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: 8 }}>{item.qty}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: 8 }}>{item.price.toFixed(2)}</td>
+                                    </tr>
+                                )
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -408,7 +487,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
                     const vendor = vendorMap[bill.vendor_id];
                     const billTotal = (bill.items || []).reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
                     const business = language === 'gu' ? businessDetailsGu : businessDetails;
-                    
+
                     return (
                         <div key={bill.id} style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '16px', marginBottom: '1rem' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
