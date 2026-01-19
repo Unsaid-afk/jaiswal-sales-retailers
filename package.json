@@ -11,7 +11,9 @@
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/supabase-js": "^2.50.2",
-    "next": "^15.3.4",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^15.1.6",
+    "next": "^15.1.6",
     "papaparse": "^5.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -20,11 +22,11 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/papaparse": "^5.3.16",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
     "supabase": "^2.26.9",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }
