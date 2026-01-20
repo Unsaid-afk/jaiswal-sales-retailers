@@ -131,10 +131,16 @@ export default function ItemsClientPage({ initialItems }: { initialItems: Item[]
 
       if (!res.ok) throw new Error("Failed to add item");
 
-      const savedItem = await res.json();
+      const savedData = await res.json();
+      // Ensure we get the object, whether it's an array [obj] or just obj
+      const savedItem = Array.isArray(savedData) ? savedData[0] : savedData;
+
+      if (!savedItem || !savedItem.id) throw new Error("Server returned invalid data");
+
       // Replace temp item with real item
-      setItems(prev => prev.map(i => i.id === tempId ? savedItem[0] || savedItem : i));
+      setItems(prev => prev.map(i => i.id === tempId ? savedItem : i));
     } catch (err) {
+      console.error(err);
       setError("Failed to add item to database. Reverting.");
       setItems(prev => prev.filter(i => i.id !== tempId)); // Revert
     }
@@ -149,9 +155,18 @@ export default function ItemsClientPage({ initialItems }: { initialItems: Item[]
 
     try {
       const res = await fetch(`/api/items?id=${itemId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete item');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete item');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An unknown error occurred");
+      const message = err instanceof Error ? err.message : "An unknown error occurred";
+      // Explicitly alert the user if it's a constraint error so they know WHY it reappeared
+      if (message.includes("part of one or more bills") || message.includes("constraint")) {
+        alert(message);
+      } else {
+        setError(message);
+      }
       setItems(previousItems); // Revert
     }
   };

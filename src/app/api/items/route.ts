@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { createSupabaseServerClient } from '@/lib/supabaseClient';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
+  const supabase = createSupabaseServerClient();
   const { data, error } = await supabase.from('items').select('*');
   if (error) {
     console.error('Error fetching items:', error);
@@ -13,6 +14,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = createSupabaseServerClient();
   try {
     const body = await req.json();
     const { name_en, name_gu, rate } = body;
@@ -35,6 +37,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const supabase = createSupabaseServerClient();
   try {
     const body = await req.json();
     const { id, ...updates } = body;
@@ -57,6 +60,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const supabase = createSupabaseServerClient();
   const id = req.nextUrl.searchParams.get('id');
 
   if (!id) {
