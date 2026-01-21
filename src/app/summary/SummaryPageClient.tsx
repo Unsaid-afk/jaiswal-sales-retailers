@@ -242,7 +242,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
             const gstAmount = withoutGst * (gstRate / 100);
             const withGst = withoutGst + gstAmount;
             return [
-                itemDetails ? (lang === 'gu' ? itemDetails.name_gu : itemDetails.name_en) : 'N/A',
+                itemDetails ? (lang === 'gu' ? (itemDetails.name_gu || itemDetails.name_en) : itemDetails.name_en) : 'N/A',
                 qty,
                 rate.toFixed(2),
                 gstRate + '%',
@@ -351,7 +351,7 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         const tableData = itemWiseSummary.map((item) => {
             const itemDetails = itemMap[item.item_id];
             // Lookup name based on PDF language, not UI language
-            const name = lang === 'gu' ? itemDetails?.name_gu : itemDetails?.name_en;
+            const name = lang === 'gu' ? (itemDetails?.name_gu || itemDetails?.name_en) : itemDetails?.name_en;
             const rate = itemDetails?.rate || 0;
             const gstRate = itemDetails?.gst_percentage || 0;
             const withoutGst = rate * item.qty;
