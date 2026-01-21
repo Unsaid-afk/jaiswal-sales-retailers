@@ -199,27 +199,32 @@ export default function BillingPage() {
       quantity,
     }));
 
-    const res = await fetch("/api/bills", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendor_id: vendorId, date, items: billItemsForApi }),
-    });
+    try {
+      const res = await fetch("/api/bills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendor_id: vendorId, date, items: billItemsForApi }),
+      });
 
-    if (res.ok) {
-      setSuccess("Bill created successfully! Added to summary.");
-      // Reset form
-      setVendorId("");
-      setDate(new Date().toISOString().split('T')[0]);
-      setCurrentBillItems([]);
-      setRedirecting(true);
-      setTimeout(() => {
-        router.push("/summary");
-      }, 2000);
-    } else {
-      const errData = await res.json();
-      setError(errData.error || "Failed to create bill.");
+      if (res.ok) {
+        setSuccess("Bill created successfully! Added to summary.");
+        // Reset form
+        setVendorId("");
+        setDate(new Date().toISOString().split('T')[0]);
+        setCurrentBillItems([]);
+        setRedirecting(true);
+        setTimeout(() => {
+          router.push("/summary");
+        }, 2000);
+      } else {
+        const errData = await res.json();
+        setError(errData.error || "Failed to create bill.");
+      }
+    } catch (err) {
+      setError("Network error: Failed to create bill. Please check your connection.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const totalAmount = currentBillItems.reduce((acc, item) => acc + (item.rate * item.quantity), 0);
@@ -233,19 +238,19 @@ export default function BillingPage() {
   }
 
   return (
-    <div style={{ maxWidth: 800, margin: "2rem auto", padding: 16 }}>
+    <div className="billing-container">
       <h1>{language === 'gu' ? 'બિલ બનાવો' : 'Create Bill'}</h1>
 
       <form onSubmit={handleSubmitBill}>
         {/* Bill Header */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
+        <div className="billing-header">
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9em' }}>{language === 'gu' ? 'રૂટ' : 'Route'}</label>
             <select
               value={selectedRouteId}
               onChange={e => { setSelectedRouteId(e.target.value); setVendorId(''); }}
               required
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              className="form-select"
             >
               <option value="">{language === 'gu' ? 'રૂટ પસંદ કરો' : 'Select Route'}</option>
               {routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -258,7 +263,7 @@ export default function BillingPage() {
               onChange={e => setVendorId(e.target.value)}
               required
               disabled={!selectedRouteId}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              className="form-select"
             >
               <option value="">{language === 'gu' ? 'વિક્રેતા પસંદ કરો' : 'Select Vendor'}</option>
               {filteredVendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -271,12 +276,12 @@ export default function BillingPage() {
               value={date}
               onChange={e => setDate(e.target.value)}
               required
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+              className="form-input"
             />
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 350px', gap: '20px' }}>
+        <div className="billing-grid">
           {/* Left Column: Item Catalog */}
           <div>
             <h2>{language === 'gu' ? 'વસ્તુઓ પસંદ કરો' : 'Select Items'}</h2>
@@ -302,7 +307,7 @@ export default function BillingPage() {
             </div>
 
             {/* Catalog List */}
-            <div style={{ border: '1px solid #eee', borderRadius: '8px', padding: '10px', height: '600px', overflowY: 'auto' }}>
+            <div className="catalog-container">
               {CATEGORIES.map(cat => {
                 const catItems = groupedItems[cat] || [];
                 if (catItems.length === 0) return null;
@@ -326,12 +331,12 @@ export default function BillingPage() {
                                   min="1"
                                   value={qtyMap[item.id] || 1}
                                   onChange={(e) => setQtyMap(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 1 }))}
-                                  style={{ width: '50px', padding: '4px', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px' }}
+                                  className="qty-input"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => handleAddItemDirectly(item)}
-                                  style={{ background: '#0070f3', color: 'white', border: 'none', borderRadius: '4px', width: '30px', height: '30px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  className="add-btn"
                                 >
                                   +
                                 </button>
@@ -350,7 +355,7 @@ export default function BillingPage() {
 
           {/* Right Column: Cart (Bill Summary) */}
           <div>
-            <div style={{ position: 'sticky', top: '20px', background: '#fff', border: '1px solid #eee', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+            <div className="summary-sidebar">
               <h2 style={{ marginTop: 0 }}>{language === 'gu' ? 'બિલ સારાંશ' : 'Bill Summary'}</h2>
               {currentBillItems.length === 0 ? (
                 <p style={{ color: '#888', fontStyle: 'italic' }}>{language === 'gu' ? 'કોઈ વસ્તુ ઉમેરાઈ નથી.' : 'No items added.'}</p>
