@@ -187,7 +187,11 @@ export default function BillingPage() {
     e.preventDefault();
     setTriedSubmit(true);
     if (!vendorId || !date || currentBillItems.length === 0) {
-      setError("Please select a vendor, date, and add at least one item.");
+      const errorMsg = language === 'gu'
+        ? "કૃપા કરીને વિક્રેતા, તારીખ પસંદ કરો અને ઓછામાં ઓછી એક વસ્તુ ઉમેરો."
+        : "Please select a vendor, date, and add at least one item.";
+      setError(errorMsg);
+      alert(errorMsg); // Explicit feedback for mobile
       return;
     }
     setLoading(true);
@@ -423,14 +427,25 @@ export default function BillingPage() {
 
               <button
                 type="submit"
-                disabled={loading || !vendorId || !date || currentBillItems.length === 0}
-                style={{ width: '100%', padding: '12px', marginTop: '20px', background: '#0070f3', color: 'white', border: 'none', borderRadius: '6px', fontSize: '1em', cursor: 'pointer' }}
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  marginTop: '20px',
+                  background: loading || (!vendorId || !date || currentBillItems.length === 0) ? '#0070f3' : '#0070f3',
+                  opacity: loading ? 0.7 : 1,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '1em',
+                  cursor: 'pointer'
+                }}
               >
                 {loading ? (language === 'gu' ? 'સબમિટ થઈ રહ્યું છે...' : 'Processing...') : (language === 'gu' ? 'બિલ બનાવો' : 'Create Bill')}
               </button>
 
-              {error && <p style={{ color: 'red', marginTop: '10px', fontSize: '0.9em' }}>{error}</p>}
-              {success && <p style={{ color: 'green', marginTop: '10px', fontSize: '0.9em' }}>{success}</p>}
+              {error && <div style={{ color: 'red', marginTop: '10px', fontSize: '0.9em', padding: '10px', border: '1px solid red', borderRadius: '4px', background: '#fff0f0' }}>{error}</div>}
+              {success && <div style={{ color: 'green', marginTop: '10px', fontSize: '0.9em', padding: '10px', border: '1px solid green', borderRadius: '4px', background: '#f0fff0' }}>{success}</div>}
 
             </div>
           </div>
