@@ -165,23 +165,64 @@ export function SummaryPageClient({ initialBills, initialItems, initialVendors }
         doc.text(`${lang === 'gu' ? 'સંપર્ક' : 'Contact'}: ${vendor?.contact || ''}`, 10, 69);
         doc.text(`${lang === 'gu' ? 'બિલની તારીખ' : 'Bill Date'}: ${formatDate(bill.date)}`, 150, 55);
 
+        const head = [[
+            lang === 'gu' ? 'વસ્તુ' : 'Item',
+            lang === 'gu' ? 'જથ્થો' : 'Quantity',
+            lang === 'gu' ? 'ભાવ' : 'Rate',
+            lang === 'gu' ? 'GST %' : 'GST %',
+            lang === 'gu' ? 'GST રકમ' : 'GST Amount',
+            lang === 'gu' ? 'GST વગર' : 'Without GST',
+            lang === 'gu' ? 'GST સાથે' : 'With GST',
+        ]];
+
         const tableData = billItems.map((item: BillItem) => {
             const itemDetails = itemMap[item.item_id];
+            const rate = item.price || 0;
+            const qty = item.quantity;
+            const gstRate = itemDetails?.gst_percentage || 0;
+            const withoutGst = rate * qty;
+            const gstAmount = withoutGst * (gstRate / 100);
+            const withGst = withoutGst + gstAmount;
+
             return [
-                itemDetails ? (lang === 'gu' ? itemDetails.name_gu : itemDetails.name_en) : 'N/A',
-                item.quantity,
-                item.price?.toFixed(2) ?? '0.00'
+                itemDetails ? (lang === 'gu' ? (itemDetails.name_gu || itemDetails.name_en) : itemDetails.name_en) : 'N/A',
+                qty,
+                rate.toFixed(2),
+                gstRate + '%',
+                gstAmount.toFixed(2),
+                withoutGst.toFixed(2),
+                withGst.toFixed(2)
             ];
         });
 
-        let total = billItems.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+        const totalGst = billItems.reduce((sum, item) => {
+            const itemDetails = itemMap[item.item_id];
+            const rate = item.price || 0;
+            const qty = item.quantity;
+            const gstRate = itemDetails?.gst_percentage || 0;
+            return sum + (rate * qty) * (gstRate / 100);
+        }, 0);
+        const totalWithoutGst = billItems.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0);
+        const totalWithGst = billItems.reduce((sum, item) => {
+            const itemDetails = itemMap[item.item_id];
+            const rate = item.price || 0;
+            const qty = item.quantity;
+            const gstRate = itemDetails?.gst_percentage || 0;
+            return sum + (rate * qty) * (1 + gstRate / 100);
+        }, 0);
 
         autoTable(doc, {
             startY: 75,
-            head: [[lang === 'gu' ? 'વસ્તુ' : 'Item', lang === 'gu' ? 'જથ્થો' : 'Quantity', lang === 'gu' ? 'ભાવ' : 'Price']],
+            head,
             body: tableData,
             foot: [
-                [{ content: lang === 'gu' ? 'કુલ' : 'Total', colSpan: 2, styles: { halign: 'right' } }, total.toFixed(2)]
+                [
+                    { content: lang === 'gu' ? 'કુલ' : 'Total', colSpan: 4, styles: { halign: 'right' } },
+                    totalGst.toFixed(2),
+                    totalWithoutGst.toFixed(2),
+                    totalWithGst.toFixed(2),
+                    ''
+                ]
             ],
             theme: 'striped',
             styles: {
